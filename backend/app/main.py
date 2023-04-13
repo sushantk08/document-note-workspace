@@ -1,13 +1,28 @@
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.config import settings
+from app.database import close_mongo_connection, connect_to_mongo, get_database
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await connect_to_mongo()
+    yield
+    # Shutdown
+    await close_mongo_connection()
+
 
 app = FastAPI(
-    title="Document & Note Management Workspace API",
+    title=settings.PROJECT_NAME,
     description="Backend API for managing polymorphic markdown notes and metadata.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
-# Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000"],
@@ -21,6 +36,15 @@ app.add_middleware(
 async def health_check():
     return {
         "status": "healthy",
-        "service": "Document & Note Management Workspace API",
+        "service": settings.PROJECT_NAME,
         "version": "1.0.0",
+    }
+
+
+@app.get("/api/health/db", tags=["Health"])
+async def database_health_check(db: AsyncIOMotorDatabase = Depends(get_database)):
+    await db.command("ping")
+    return {
+        "database_status": "connected",
+        "database_name": settings.DATABASE_NAME,
     }
