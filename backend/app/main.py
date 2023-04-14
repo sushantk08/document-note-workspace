@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from app.schemas.note import NoteCreate
 
 from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo, get_database
@@ -48,3 +49,7 @@ async def database_health_check(db: AsyncIOMotorDatabase = Depends(get_database)
         "database_status": "connected",
         "database_name": settings.DATABASE_NAME,
     }
+
+@app.post("/api/test-schema", tags=["Debug"])
+async def test_schema_endpoint(note: NoteCreate):
+    return {"message": "Schema valid", "received_type": note.note_type, "data": note}
