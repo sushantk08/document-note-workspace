@@ -50,6 +50,3 @@ async def database_health_check(db: AsyncIOMotorDatabase = Depends(get_database)
         "database_name": settings.DATABASE_NAME,
     }
 
-@app.post("/api/test-schema", tags=["Debug"])
-async def test_schema_endpoint(note: NoteCreate):
-    return {"message": "Schema valid", "received_type": note.note_type, "data": note}
