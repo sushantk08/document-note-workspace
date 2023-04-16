@@ -115,3 +115,9 @@ NoteResponse = Annotated[
     Union[StandardNoteResponse, ChecklistNoteResponse, CodeSnippetNoteResponse],
     Field(discriminator="note_type"),
 ]
+
+class NoteListResponse(BaseModel):
+    items: List[NoteResponse]
+    total: int
+    skip: int
+    limit: int

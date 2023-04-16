@@ -2,18 +2,16 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.schemas.note import NoteCreate
 
 from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo, get_database
+from app.routers import notes
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     await connect_to_mongo()
     yield
-    # Shutdown
     await close_mongo_connection()
 
 
@@ -32,6 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register routers
+app.include_router(notes.router, prefix="/api/notes", tags=["Notes"])
+
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():
@@ -49,4 +50,3 @@ async def database_health_check(db: AsyncIOMotorDatabase = Depends(get_database)
         "database_status": "connected",
         "database_name": settings.DATABASE_NAME,
     }
-
