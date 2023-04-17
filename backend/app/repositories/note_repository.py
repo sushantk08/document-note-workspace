@@ -127,3 +127,95 @@ class NoteRepository:
             "tags", {"is_archived": {"$ne": True}}
         )
         return sorted([t for t in tags if isinstance(t, str) and t.strip()])
+
+    async def get_tags_with_counts(self) -> List[Dict[str, Any]]:
+        """Uses MongoDB aggregation pipeline to count occurrences of each tag across active notes."""
+        pipeline = [
+            {"$match": {"is_archived": {"$ne": True}}},
+            {"$unwind": "$tags"},
+            {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1, "_id": 1}},
+            {"$project": {"tag": "$_id", "count": 1, "_id": 0}},
+        ]
+        cursor = self.collection.aggregate(pipeline)
+        return await cursor.to_list(length=100)
+
+    async def get_workspace_stats(self) -> Dict[str, Any]:
+        """Calculates global workspace counts by note type and status."""
+        pipeline = [
+            {
+                "$group": {
+                    "_id": None,
+                    "total_notes": {"$sum": 1},
+                    "active_notes": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$is_archived", False]}, 1, 0]
+                        }
+                    },
+                    "archived_notes": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$is_archived", True]}, 1, 0]
+                        }
+                    },
+                    "pinned_notes": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$is_pinned", True]}, 1, 0]
+                        }
+                    },
+                    "standard_count": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$note_type", "standard"]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                    "checklist_count": {
+                        "$sum": {
+                            "$cond": [
+                                {"$eq": ["$note_type", "checklist"]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                    "code_count": {
+                        "$sum": {
+                            "$cond": [{"$eq": ["$note_type", "code"]}, 1, 0]
+                        }
+                    },
+                }
+            }
+        ]
+        cursor = self.collection.aggregate(pipeline)
+        results = await cursor.to_list(length=1)
+        if results:
+            data = results[0]
+            data.pop("_id", None)
+            return data
+        return {
+            "total_notes": 0,
+            "active_notes": 0,
+            "archived_notes": 0,
+            "pinned_notes": 0,
+            "standard_count": 0,
+            "checklist_count": 0,
+            "code_count": 0,
+        }
+
+    async def toggle_pin(self, note_id: str) -> Optional[Dict[str, Any]]:
+        """Toggles the is_pinned status of a note."""
+        doc = await self.get_by_id(note_id)
+        if not doc:
+            return None
+        new_status = not doc.get("is_pinned", False)
+        return await self.update(note_id, NoteUpdate(is_pinned=new_status))
+
+    async def toggle_archive(self, note_id: str) -> Optional[Dict[str, Any]]:
+        """Toggles the is_archived status of a note."""
+        doc = await self.get_by_id(note_id)
+        if not doc:
+            return None
+        new_status = not doc.get("is_archived", False)
+        return await self.update(note_id, NoteUpdate(is_archived=new_status))

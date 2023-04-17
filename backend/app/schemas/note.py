@@ -121,3 +121,18 @@ class NoteListResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+class TagCount(BaseModel):
+    tag: str
+    count: int
+
+
+class WorkspaceStats(BaseModel):
+    total_notes: int = 0
+    active_notes: int = 0
+    archived_notes: int = 0
+    pinned_notes: int = 0
+    standard_count: int = 0
+    checklist_count: int = 0
+    code_count: int = 0

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -10,6 +10,8 @@ from app.schemas.note import (
     NoteResponse,
     NoteType,
     NoteUpdate,
+    TagCount,
+    WorkspaceStats,
 )
 
 router = APIRouter()
@@ -21,6 +23,30 @@ def get_repository(
     return NoteRepository(db)
 
 
+# ----------------------------------------------------
+# Static Aggregation & Metadata Routes
+# ----------------------------------------------------
+@router.get(
+    "/tags",
+    response_model=List[TagCount],
+    summary="Get all unique tags with note counts",
+)
+async def get_all_tags(repo: NoteRepository = Depends(get_repository)):
+    return await repo.get_tags_with_counts()
+
+
+@router.get(
+    "/stats/summary",
+    response_model=WorkspaceStats,
+    summary="Get workspace dashboard summary stats",
+)
+async def get_stats(repo: NoteRepository = Depends(get_repository)):
+    return await repo.get_workspace_stats()
+
+
+# ----------------------------------------------------
+# Core CRUD Routes
+# ----------------------------------------------------
 @router.post(
     "/",
     response_model=NoteResponse,
@@ -30,8 +56,7 @@ def get_repository(
 async def create_note(
     note: NoteCreate, repo: NoteRepository = Depends(get_repository)
 ):
-    created_doc = await repo.create(note)
-    return created_doc
+    return await repo.create(note)
 
 
 @router.get(
@@ -89,6 +114,40 @@ async def update_note(
     repo: NoteRepository = Depends(get_repository),
 ):
     doc = await repo.update(note_id, note_update)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found.",
+        )
+    return doc
+
+
+@router.patch(
+    "/{note_id}/pin",
+    response_model=NoteResponse,
+    summary="Toggle pin status of a note",
+)
+async def toggle_pin_note(
+    note_id: str, repo: NoteRepository = Depends(get_repository)
+):
+    doc = await repo.toggle_pin(note_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found.",
+        )
+    return doc
+
+
+@router.patch(
+    "/{note_id}/archive",
+    response_model=NoteResponse,
+    summary="Toggle archive status of a note",
+)
+async def toggle_archive_note(
+    note_id: str, repo: NoteRepository = Depends(get_repository)
+):
+    doc = await repo.toggle_archive(note_id)
     if not doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
