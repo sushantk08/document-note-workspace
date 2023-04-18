@@ -62,16 +62,30 @@ async def create_note(
 @router.get(
     "/",
     response_model=NoteListResponse,
-    summary="List notes with optional filters",
+    summary="List notes with full-text search, filters, and sorting",
 )
 async def list_notes(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
-    tag: Optional[str] = Query(None),
-    note_type: Optional[NoteType] = Query(None),
-    is_archived: Optional[bool] = Query(False),
-    is_pinned: Optional[bool] = Query(None),
-    search: Optional[str] = Query(None),
+    tag: Optional[str] = Query(None, description="Filter by tag"),
+    note_type: Optional[NoteType] = Query(
+        None, description="Filter by note type"
+    ),
+    is_archived: Optional[bool] = Query(
+        False, description="Filter archived notes"
+    ),
+    is_pinned: Optional[bool] = Query(None, description="Filter pinned notes"),
+    search: Optional[str] = Query(
+        None, description="Full-text search keywords"
+    ),
+    sort_by: str = Query(
+        "updated_at",
+        pattern="^(updated_at|created_at|title|relevance)$",
+        description="Sort field",
+    ),
+    sort_order: str = Query(
+        "desc", pattern="^(asc|desc)$", description="Sort order"
+    ),
     repo: NoteRepository = Depends(get_repository),
 ):
     docs, total = await repo.list(
@@ -82,9 +96,10 @@ async def list_notes(
         is_archived=is_archived,
         is_pinned=is_pinned,
         search_query=search,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
     return {"items": docs, "total": total, "skip": skip, "limit": limit}
-
 
 @router.get(
     "/{note_id}",

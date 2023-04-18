@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pymongo import ReturnDocument
+from pymongo import ASCENDING, DESCENDING, ReturnDocument, TEXT
 
 from app.schemas.note import NoteCreate, NoteUpdate
 
@@ -13,6 +13,38 @@ class NoteRepository:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.collection = db["notes"]
 
+    async def init_indexes(self):
+        """Creates compound text indexes and metadata indexes for fast queries."""
+        # Compound Text Index for full-text search with field weights
+        await self.collection.create_index(
+            [
+                ("title", TEXT),
+                ("tags", TEXT),
+                ("content", TEXT),
+                ("items.text", TEXT),
+                ("explanation", TEXT),
+                ("code", TEXT),
+            ],
+            weights={
+                "title": 10,
+                "tags": 8,
+                "content": 5,
+                "items.text": 5,
+                "explanation": 3,
+                "code": 2,
+            },
+            name="notes_text_search_idx",
+            default_language="english",
+        )
+
+        # Single field indexes for fast filtering and sorting
+        await self.collection.create_index(
+            [("is_archived", ASCENDING), ("is_pinned", DESCENDING)]
+        )
+        await self.collection.create_index([("updated_at", DESCENDING)])
+        await self.collection.create_index([("tags", ASCENDING)])
+        await self.collection.create_index([("note_type", ASCENDING)])
+
     def _format_doc(
         self, doc: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
@@ -20,6 +52,8 @@ class NoteRepository:
         if not doc:
             return None
         doc["_id"] = str(doc["_id"])
+        # Remove MongoDB text score metadata before returning to Pydantic
+        doc.pop("score", None)
         return doc
 
     async def create(self, note: NoteCreate) -> Dict[str, Any]:
@@ -52,9 +86,12 @@ class NoteRepository:
         is_archived: Optional[bool] = False,
         is_pinned: Optional[bool] = None,
         search_query: Optional[str] = None,
+        sort_by: str = "updated_at",
+        sort_order: str = "desc",
     ) -> Tuple[List[Dict[str, Any]], int]:
-        """Lists notes matching filters with pagination and total count."""
+        """Lists notes matching filters with full-text search, custom sorting, and pagination."""
         filter_query: Dict[str, Any] = {}
+        projection: Optional[Dict[str, Any]] = None
 
         if is_archived is not None:
             filter_query["is_archived"] = is_archived
@@ -64,22 +101,32 @@ class NoteRepository:
             filter_query["tags"] = tag
         if note_type:
             filter_query["note_type"] = note_type
-        if search_query:
-            regex_pattern = {"$regex": search_query, "$options": "i"}
-            filter_query["$or"] = [
-                {"title": regex_pattern},
-                {"content": regex_pattern},
-                {"explanation": regex_pattern},
-                {"tags": regex_pattern},
-                {"items.text": regex_pattern},
-            ]
+
+        # Configure Full-Text Search
+        if search_query and search_query.strip():
+            filter_query["$text"] = {"$search": search_query.strip()}
+            projection = {"score": {"$meta": "textScore"}}
 
         total_count = await self.collection.count_documents(filter_query)
 
-        # Sort pinned notes first, then newest updated notes
+        # Configure Sorting
+        direction = DESCENDING if sort_order.lower() == "desc" else ASCENDING
+        sort_criteria = []
+
+        if is_pinned is None:
+            # Show pinned notes first by default unless specifically filtered
+            sort_criteria.append(("is_pinned", DESCENDING))
+
+        if search_query and sort_by == "relevance":
+            sort_criteria.append(("score", {"$meta": "textScore"}))
+        elif sort_by in ["created_at", "updated_at", "title"]:
+            sort_criteria.append((sort_by, direction))
+        else:
+            sort_criteria.append(("updated_at", DESCENDING))
+
         cursor = (
-            self.collection.find(filter_query)
-            .sort([("is_pinned", -1), ("updated_at", -1)])
+            self.collection.find(filter_query, projection)
+            .sort(sort_criteria)
             .skip(skip)
             .limit(limit)
         )
@@ -121,15 +168,8 @@ class NoteRepository:
         result = await self.collection.delete_one({"_id": obj_id})
         return result.deleted_count > 0
 
-    async def get_distinct_tags(self) -> List[str]:
-        """Returns a sorted list of unique tags from non-archived notes."""
-        tags = await self.collection.distinct(
-            "tags", {"is_archived": {"$ne": True}}
-        )
-        return sorted([t for t in tags if isinstance(t, str) and t.strip()])
-
     async def get_tags_with_counts(self) -> List[Dict[str, Any]]:
-        """Uses MongoDB aggregation pipeline to count occurrences of each tag across active notes."""
+        """Counts occurrences of each tag across active notes."""
         pipeline = [
             {"$match": {"is_archived": {"$ne": True}}},
             {"$unwind": "$tags"},
@@ -205,7 +245,6 @@ class NoteRepository:
         }
 
     async def toggle_pin(self, note_id: str) -> Optional[Dict[str, Any]]:
-        """Toggles the is_pinned status of a note."""
         doc = await self.get_by_id(note_id)
         if not doc:
             return None
@@ -213,7 +252,6 @@ class NoteRepository:
         return await self.update(note_id, NoteUpdate(is_pinned=new_status))
 
     async def toggle_archive(self, note_id: str) -> Optional[Dict[str, Any]]:
-        """Toggles the is_archived status of a note."""
         doc = await self.get_by_id(note_id)
         if not doc:
             return None

@@ -5,13 +5,19 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo, get_database
+from app.repositories.note_repository import NoteRepository
 from app.routers import notes
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup: connect and build indexes
     await connect_to_mongo()
+    db = get_database()
+    repo = NoteRepository(db)
+    await repo.init_indexes()
     yield
+    # Shutdown
     await close_mongo_connection()
 
 
@@ -30,7 +36,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register routers
 app.include_router(notes.router, prefix="/api/notes", tags=["Notes"])
 
 
