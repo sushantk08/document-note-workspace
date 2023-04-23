@@ -4,10 +4,11 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import NoteCard from './components/NoteCard';
 import NewNoteModal from './components/NewNoteModal';
+import NoteEditor from './components/NoteEditor';
 import { FileText, Plus } from 'lucide-react';
 
 export default function App() {
-  const { notes, loading, setSelectedNote } = useNotes();
+  const { notes, loading, selectedNote, setSelectedNote } = useNotes();
   const [viewMode, setViewMode] = useState('grid');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -93,12 +94,20 @@ export default function App() {
         </main>
       </div>
 
-      {/* Creation Modal */}
+      {/* New Note Creation Modal */}
       <NewNoteModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onCreated={(created) => setSelectedNote(created)}
       />
+
+      {/* Polymorphic Note Editor Modal */}
+      {selectedNote && (
+        <NoteEditor
+          note={selectedNote}
+          onClose={() => setSelectedNote(null)}
+        />
+      )}
     </div>
   );
 }
