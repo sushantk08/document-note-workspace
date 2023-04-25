@@ -362,7 +362,7 @@ Docker Compose is the recommended approach because it starts the frontend, backe
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/<your-username>/document-note-workspace.git
+git clone https://github.com/sushantk08/document-note-workspace.git
 cd document-note-workspace
 ```
 
