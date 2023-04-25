@@ -11,6 +11,8 @@ services:
       MONGO_INITDB_DATABASE: note_workspace_db
     volumes:
       - mongo_data:/data/db
+    networks:
+      - workspace_net
 
   mongo-express:
     image: mongo-express:latest
@@ -25,6 +27,41 @@ services:
       ME_CONFIG_BASICAUTH: "false"
     depends_on:
       - mongodb
+    networks:
+      - workspace_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: note_workspace_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_URI: mongodb://devuser:devpassword@mongodb:27017/note_workspace_db?authSource=admin
+      DATABASE_NAME: note_workspace_db
+    depends_on:
+      - mongodb
+    networks:
+      - workspace_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: note_workspace_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - workspace_net
 
 volumes:
   mongo_data:
+
+networks:
+  workspace_net:
+    driver: bridge
